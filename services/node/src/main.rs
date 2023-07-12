@@ -14,6 +14,7 @@ mod result;
 mod storage_impl;
 mod transaction;
 pub mod transactions_impl;
+mod utils;
 mod validators;
 
 use cron::SerdeCron;
@@ -29,7 +30,7 @@ use marine_rs_sdk::module_manifest;
 use marine_rs_sdk::WasmLoggerBuilder;
 
 use error::ServiceError::{
-    self, InvalidMethod, InvalidOwner, InvalidSignature, NoEncryptionType,
+    self, InvalidMethod, InvalidOwner, InvalidSignature, NoEncryptionType, NoProgramId,
     NotSupportedEncryptionType, RecordFound,
 };
 
@@ -42,8 +43,9 @@ use result::{FdbMetadataResult, FdbResult};
 use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 use storage_impl::get_storage;
-use transaction::{Transaction, TransactionQuery, TransactionOrdering, TransactionRequest};
-use types::{IpfsDagGetResult, IpfsDagPutResult};
+use transaction::{Transaction, TransactionOrdering, TransactionQuery, TransactionRequest};
+use types::{IpfsDagGetResult, IpfsDagPutResult, IpfsPutResult};
+use utils::hasher;
 use validators::{
     validate_clone, validate_cron, validate_meta_contract, validate_metadata,
     validate_metadata_cron,
@@ -76,20 +78,19 @@ pub fn main() {
 }
 
 #[marine]
-pub fn send_transaction(
+pub fn publish(
     data_key: String,
-    token_key: String,
-    token_id: String,
+    method: String,
     alias: String,
     public_key: String,
+    program_id: String,
     signature: String,
     data: String,
-    method: String,
-    nonce: i64,
-    version: i64,
+    version: String,
 ) -> FdbResult {
-    let mut meta_contract_id = "".to_string();
+    let mut program_id = program_id;
     let mut error: Option<ServiceError> = None;
+    let mut content = "".to_string();
     let storage = get_storage().expect("Database non existance");
 
     if error.is_none() {
@@ -109,33 +110,56 @@ pub fn send_transaction(
 
     if error.is_none() {
         if method.clone() == METHOD_METADATA {
-            let result = storage.get_owner_metadata_by_datakey_and_alias(
-                data_key.clone(),
-                public_key.clone(),
-                alias.clone(),
-            );
+            if program_id.clone().is_empty() {
+                error = Some(NoProgramId());
+            }
 
-            match result {
-                Ok(metadata) => {
-                    if metadata.public_key != public_key {
-                        error = Some(InvalidOwner(f!("not owner of data_key: {public_key}")));
+            if (error.is_none()) {
+                let result = storage.get_owner_metadata(
+                    data_key.clone(),
+                    program_id.clone(),
+                    public_key.clone(),
+                    alias.clone(),
+                    version.clone(),
+                );
+
+                match result {
+                    Ok(metadata) => {
+                        if metadata.public_key != public_key {
+                            error = Some(InvalidOwner(f!("not owner of data_key: {public_key}")));
+                        }
+
+                        content = metadata.cid;
                     }
+                    Err(ServiceError::RecordNotFound(_)) => {}
+                    Err(e) => error = Some(e),
                 }
-                Err(ServiceError::RecordNotFound(_)) => {}
-                Err(e) => error = Some(e),
             }
         } else if method.clone() == METHOD_CONTRACT {
-            meta_contract_id = data.clone();
+            // to generate unique program_id
+            program_id = hasher(f!("{}{}", data.clone(), public_key.clone()));
+            // Check if the
+            let result = storage.get_meta_contract(program_id.clone());
+            match result {
+                Ok(metacontract) => {
+                    error = Some(ServiceError::RecordFound(program_id.clone()));
+                    content = metacontract.program_id;
+                }
+                Err(e) => error = Some(e),
+            }
+            content = program_id.clone();
         } else if method.clone() == METHOD_CLONE {
             let data_clone_result: Result<DataTypeClone, serde_json::Error> =
                 serde_json::from_str(&data.clone());
 
             match data_clone_result {
                 Ok(data_clone) => {
-                    let origin_metadata_result = storage.get_owner_metadata_by_datakey_and_alias(
+                    let origin_metadata_result = storage.get_owner_metadata(
                         data_clone.origin_data_key.clone(),
+                        data_clone.origin_program_id.clone(),
                         data_clone.origin_public_key.clone(),
                         data_clone.origin_alias.clone(),
+                        data_clone.origin_version.clone(),
                     );
 
                     match origin_metadata_result {
@@ -144,10 +168,12 @@ pub fn send_transaction(
                     }
 
                     if error.is_none() {
-                        let new_metadata_result = storage.get_owner_metadata_by_datakey_and_alias(
+                        let new_metadata_result = storage.get_owner_metadata(
                             data_key.clone(),
+                            data_clone.origin_program_id.clone(),
                             data_clone.origin_public_key.clone(),
                             data_clone.origin_alias.clone(),
+                            data_clone.origin_version.clone(),
                         );
 
                         match new_metadata_result {
@@ -209,6 +235,8 @@ pub fn send_transaction(
                 }
                 Err(e) => error = Some(ServiceError::InvalidDataFormatForMethodType(e.to_string())),
             }
+        } else {
+            error = Some(InvalidMethod(f!("{method}")));
         }
     }
 
@@ -240,22 +268,21 @@ pub fn send_transaction(
     let cp = marine_rs_sdk::get_call_parameters();
 
     let now = SystemTime::now();
-    let node_timestamp = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+    let timestamp = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
 
+    // Hash version
     let mut transaction = Transaction::new(
-        token_key,
+        program_id,
         cp.init_peer_id,
         cp.host_id,
         data_key,
-        nonce,
         data,
         public_key,
         alias,
-        node_timestamp.as_millis() as u64,
-        meta_contract_id,
+        timestamp.as_millis() as u64,
         method,
-        token_id,
-        version,
+        hasher(version),
+        content,
     );
 
     if !error.is_none() {
@@ -271,28 +298,24 @@ pub fn send_transaction(
 }
 
 #[marine]
-pub fn send_batch_transaction(
-  txs: Vec<TransactionRequest>
-) -> Vec<FdbResult> {
-  let mut results: Vec<FdbResult> = vec![];
-  
-  for tx in txs {
-    let result = send_transaction(
-      tx.data_key, 
-      tx.token_key, 
-      tx.token_id, 
-      tx.alias, 
-      tx.public_key, 
-      tx.signature, 
-      tx.data, 
-      tx.method, 
-      tx.nonce,
-      tx.version,
-    );
+pub fn send_batch_transaction(txs: Vec<TransactionRequest>) -> Vec<FdbResult> {
+    let mut results: Vec<FdbResult> = vec![];
 
-      results.push(result);
-  }
-  results
+    for tx in txs {
+        let result = publish(
+            tx.data_key,
+            tx.method,
+            tx.alias,
+            tx.public_key,
+            tx.program_id,
+            tx.signature,
+            tx.data,
+            tx.version,
+        );
+
+        results.push(result);
+    }
+    results
 }
 
 #[marine]
@@ -408,16 +431,22 @@ pub fn get_node_clock() -> FdbClock {
 }
 
 #[marine]
-pub fn get_metadata(data_key: String, public_key: String, alias: String) -> FdbMetadataResult {
+pub fn get_metadata(
+    data_key: String,
+    program_id: String,
+    public_key: String,
+    alias: String,
+    version: String,
+) -> FdbMetadataResult {
     wrapped_try(|| {
-        get_storage()?.get_owner_metadata_by_datakey_and_alias(data_key, public_key, alias)
+        get_storage()?.get_owner_metadata(data_key, program_id, public_key, alias, version)
     })
     .into()
 }
 
 #[marine]
-pub fn get_metadatas(data_key: String) -> FdbMetadatasResult {
-    wrapped_try(|| get_storage()?.get_metadata_by_datakey(data_key)).into()
+pub fn get_metadatas(data_key: String, version: String) -> FdbMetadatasResult {
+    wrapped_try(|| get_storage()?.get_metadata_by_datakey_and_version(data_key, version)).into()
 }
 
 #[marine]
@@ -447,12 +476,12 @@ pub fn get_pending_transactions() -> FdbTransactionsResult {
 
 #[marine]
 pub fn get_transactions(
-  query: Vec<TransactionQuery>,
-  ordering: Vec<TransactionOrdering>,
-  from: u32,
-  to: u32,
+    query: Vec<TransactionQuery>,
+    ordering: Vec<TransactionOrdering>,
+    from: u32,
+    to: u32,
 ) -> FdbTransactionsResult {
-  wrapped_try(|| get_storage()?.get_transactions(query, ordering, from, to)).into()
+    wrapped_try(|| get_storage()?.get_transactions(query, ordering, from, to)).into()
 }
 
 #[marine]
@@ -503,13 +532,15 @@ pub fn get_cron_tx_latest_block(address: String, chain: String, topic: String) -
 #[marine]
 pub fn get_metadata_with_history(
     data_key: String,
+    program_id: String,
     public_key: String,
     alias: String,
+    version: String,
 ) -> FdbMetadataHistoryResult {
     wrapped_try(|| {
         let storage = get_storage().expect("Internal error to database connector");
 
-        let result = storage.get_owner_metadata_by_datakey_and_alias(data_key, public_key, alias);
+        let result = storage.get_owner_metadata(data_key, program_id, public_key, alias, version);
 
         let metadata;
         let mut metadatas: Vec<String> = Vec::new();
@@ -524,7 +555,7 @@ pub fn get_metadata_with_history(
         let mut read_metadata_cid: String = metadata.cid.clone();
 
         while read_metadata_cid.len() > 0 {
-            let result = get(read_metadata_cid.clone(), "".to_string(), 0);
+            let result = get_ipld(read_metadata_cid.clone(), "".to_string(), 0);
             let val: Value = serde_json::from_str(&result.block).unwrap();
 
             let input = format!(r#"{}"#, val);
@@ -613,8 +644,8 @@ pub fn deserialize_fork(data: String) -> DataTypeFork {
 #[marine]
 #[link(wasm_import_module = "ipfsdag")]
 extern "C" {
-    #[link_name = "put_block"]
-    pub fn put_block(
+    #[link_name = "put_ipld"]
+    pub fn put_ipld(
         content: String,
         previous_cid: String,
         transaction: String,
@@ -622,8 +653,11 @@ extern "C" {
         timeout_sec: u64,
     ) -> IpfsDagPutResult;
 
-    #[link_name = "get"]
-    pub fn get(hash: String, api_multiaddr: String, timeout_sec: u64) -> IpfsDagGetResult;
+    #[link_name = "get_ipld"]
+    pub fn get_ipld(hash: String, api_multiaddr: String, timeout_sec: u64) -> IpfsDagGetResult;
+
+    #[link_name = "put"]
+    pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutResult;
 }
 
 #[marine]

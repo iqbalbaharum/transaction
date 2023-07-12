@@ -29,4 +29,6 @@ pub enum ServiceError {
     NoEncryptionType(),
     #[error["Invalid data format: {0}"]]
     InvalidDataFormatForMethodType(String),
+    #[error["No Program ID specify"]]
+    NoProgramId(),
 }

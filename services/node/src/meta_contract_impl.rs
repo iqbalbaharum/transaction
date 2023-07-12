@@ -9,9 +9,9 @@ impl Storage {
         let table_schema = format!(
             "
             CREATE TABLE IF NOT EXISTS {} (
-                token_key varchar(255) not null primary key,
-                meta_contract_id varchar(255) null,
-                public_key varchar(255) null
+                program_id varchar(255) not null primary key,
+                public_key varchar(255) not null,
+                cid varchar(255) not null
             );",
             META_CONTRACT_TABLE_NAME
         );
@@ -29,11 +29,8 @@ impl Storage {
      */
     pub fn write_meta_contract(&self, contract: MetaContract) -> Result<(), ServiceError> {
         let s = format!(
-            "insert into {} (token_key, meta_contract_id, public_key) values ('{}', '{}', '{}');",
-            META_CONTRACT_TABLE_NAME,
-            contract.token_key,
-            contract.meta_contract_id,
-            contract.public_key
+            "insert into {} (program_id, public_key, cid) values ('{}', '{}', '{}');",
+            META_CONTRACT_TABLE_NAME, contract.program_id, contract.public_key, contract.cid
         );
 
         self.connection.execute(s)?;
@@ -41,56 +38,42 @@ impl Storage {
         Ok(())
     }
 
-    pub fn rebind_meta_contract(
-        &self,
-        token_key: String,
-        meta_contract_id: String,
-    ) -> Result<(), ServiceError> {
-        self.connection.execute(format!(
-            "
-          update {}
-          set meta_contract_id = '{}'
-          where token_key = '{}';
-          ",
-            META_CONTRACT_TABLE_NAME, meta_contract_id, token_key
-        ))?;
-
-        Ok(())
-    }
-
-    pub fn get_meta_contract(&self, token_key: String) -> Result<MetaContract, ServiceError> {
+    pub fn get_meta_contract(&self, program_id: String) -> Result<MetaContract, ServiceError> {
         let mut statement = self.connection.prepare(f!(
-            "SELECT * FROM {META_CONTRACT_TABLE_NAME} WHERE token_key = ?"
+            "SELECT * FROM {META_CONTRACT_TABLE_NAME} WHERE program_id = ?"
         ))?;
 
-        statement.bind(1, &Value::String(token_key.clone()))?;
+        statement.bind(1, &Value::String(program_id.clone()))?;
 
         if let State::Row = statement.next()? {
             read(&statement)
         } else {
-            Err(RecordNotFound(f!("{token_key}")))
+            Err(RecordNotFound(f!("{program_id}")))
         }
     }
 
-    pub fn get_meta_contract_by_id(&self, meta_contract_id: String) -> Result<MetaContract, ServiceError> {
-      let mut statement = self.connection.prepare(f!(
-          "SELECT * FROM {META_CONTRACT_TABLE_NAME} WHERE meta_contract_id = ?"
-      ))?;
+    pub fn get_meta_contract_by_id(
+        &self,
+        program_id: String,
+    ) -> Result<MetaContract, ServiceError> {
+        let mut statement = self.connection.prepare(f!(
+            "SELECT * FROM {META_CONTRACT_TABLE_NAME} WHERE program_id = ?"
+        ))?;
 
-      statement.bind(1, &Value::String(meta_contract_id.clone()))?;
+        statement.bind(1, &Value::String(program_id.clone()))?;
 
-      if let State::Row = statement.next()? {
-          read(&statement)
-      } else {
-          Err(RecordNotFound(f!("{meta_contract_id}")))
-      }
-  }
+        if let State::Row = statement.next()? {
+            read(&statement)
+        } else {
+            Err(RecordNotFound(f!("{program_id}")))
+        }
+    }
 }
 
 pub fn read(statement: &Statement) -> Result<MetaContract, ServiceError> {
     Ok(MetaContract {
-        token_key: statement.read::<String>(0)?,
-        meta_contract_id: statement.read::<String>(1)?,
-        public_key: statement.read::<String>(2)?,
+        program_id: statement.read::<String>(0)?,
+        public_key: statement.read::<String>(1)?,
+        cid: statement.read::<String>(2)?,
     })
 }

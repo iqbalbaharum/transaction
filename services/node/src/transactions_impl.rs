@@ -2,7 +2,7 @@ use crate::defaults::{STATUS_PENDING, STATUS_SUCCESS, TRANSACTIONS_TABLE_NAME};
 use crate::error::ServiceError;
 use crate::error::ServiceError::InternalError;
 use crate::storage_impl::Storage;
-use crate::transaction::{Transaction, TransactionQuery, TransactionOrdering};
+use crate::transaction::{Transaction, TransactionOrdering, TransactionQuery};
 use marine_sqlite_connector::{State, Statement, Value};
 
 impl Storage {
@@ -11,21 +11,18 @@ impl Storage {
             "
             CREATE TABLE IF NOT EXISTS {} (
                 hash TEXT PRIMARY KEY UNIQUE,
-                token_key TEXT NOT NULL,
+                method TEXT NOT NULL,
+                program_id TEXT NOT NULL,
                 data_key TEXT NOT NULL,
                 from_peer_id TEXT NOT NULL,
                 host_id TEXT NOT NULL,
                 status INTEGER NOT NULL,
-                data TEXT NOT NULL,
+                data TEXT NULL,
                 public_key TEXT NOT NULL,
                 alias TEXT,
                 timestamp INTEGER NOT NULL,
                 error_text TEXT NULL,
-                meta_contract_id TEXT,
-                method TEXT NOT NULL,
-                nonce INTEGER NOT NULL,
-                token_id TEXT,
-                version INTEGER NOT NULL
+                version varchar(32) NOT NULL
             );",
             TRANSACTIONS_TABLE_NAME
         );
@@ -39,23 +36,20 @@ impl Storage {
 
     pub fn write_transaction(&self, transaction: Transaction) -> Result<String, ServiceError> {
         let s = format!(
-            "insert into {} (hash, token_key, token_id, from_peer_id, host_id, status, data_key, data, public_key, alias, timestamp, meta_contract_id, method, error_text, nonce, version) values ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
+            "insert into {} (hash, method, program_id, data_key, from_peer_id, host_id, status, data, public_key, alias, timestamp, error_text, version) values ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
             TRANSACTIONS_TABLE_NAME,
             transaction.hash,
-            transaction.token_key,
-            transaction.token_id,
+            transaction.method,
+            transaction.program_id,
+            transaction.data_key,
             transaction.from_peer_id,
             transaction.host_id,
             transaction.status,
-            transaction.data_key,
             transaction.data,
             transaction.public_key,
             transaction.alias,
             transaction.timestamp,
-            transaction.meta_contract_id,
-            transaction.method,
             transaction.error_text,
-            transaction.nonce,
             transaction.version,
         );
 
@@ -120,46 +114,56 @@ impl Storage {
         Ok(transactions)
     }
 
-    pub fn get_transactions(&self, query: Vec<TransactionQuery>, ordering: Vec<TransactionOrdering>, from: u32, to: u32) -> Result<Vec<Transaction>, ServiceError> {
-      
-      let mut query_str = "".to_string();
-      let mut ordering_str = "".to_string();
-      let mut limit_str = "".to_string();
+    pub fn get_transactions(
+        &self,
+        query: Vec<TransactionQuery>,
+        ordering: Vec<TransactionOrdering>,
+        from: u32,
+        to: u32,
+    ) -> Result<Vec<Transaction>, ServiceError> {
+        let mut query_str = "".to_string();
+        let mut ordering_str = "".to_string();
+        let mut limit_str = "".to_string();
 
-      if query.len() > 0 {
-        let queries: Vec<String> = query.into_iter().map(|param| format!("{} {} '{}'", param.column, param.op, param.query)).collect();
+        if query.len() > 0 {
+            let queries: Vec<String> = query
+                .into_iter()
+                .map(|param| format!("{} {} '{}'", param.column, param.op, param.query))
+                .collect();
 
-        query_str = format!("WHERE {}",queries.join(" AND "));
-      }
+            query_str = format!("WHERE {}", queries.join(" AND "));
+        }
 
-      if ordering.len() > 0 {
-        let orders: Vec<String> = ordering.into_iter().map(|param| format!("{} {}", param.column, param.sort)).collect();
-      
-        ordering_str = format!("ORDER BY {}",orders.join(", "));
-      } else {
-        ordering_str = format!("ORDER BY timestamp DESC");
-      }
-      if to > 0 {
-        limit_str = format!("LIMIT {},{}", from, to);
-      }
+        if ordering.len() > 0 {
+            let orders: Vec<String> = ordering
+                .into_iter()
+                .map(|param| format!("{} {}", param.column, param.sort))
+                .collect();
 
-      
-      let s = format!("SELECT * FROM {} {} {} {}", TRANSACTIONS_TABLE_NAME, query_str, ordering_str, limit_str);
+            ordering_str = format!("ORDER BY {}", orders.join(", "));
+        } else {
+            ordering_str = format!("ORDER BY timestamp DESC");
+        }
+        if to > 0 {
+            limit_str = format!("LIMIT {},{}", from, to);
+        }
 
-      log::info!("{}", s.clone());
+        let s = format!(
+            "SELECT * FROM {} {} {} {}",
+            TRANSACTIONS_TABLE_NAME, query_str, ordering_str, limit_str
+        );
 
-      let mut statement = self
-      .connection
-      .prepare(s)?;
+        log::info!("{}", s.clone());
 
+        let mut statement = self.connection.prepare(s)?;
 
-      let mut transactions = Vec::new();
+        let mut transactions = Vec::new();
 
-      while let State::Row = statement.next()? {
-        transactions.push(read(&statement)?);
-      }
+        while let State::Row = statement.next()? {
+            transactions.push(read(&statement)?);
+        }
 
-      Ok(transactions)
+        Ok(transactions)
     }
 
     pub fn get_success_transactions(
@@ -188,20 +192,17 @@ impl Storage {
 pub fn read(statement: &Statement) -> Result<Transaction, ServiceError> {
     Ok(Transaction {
         hash: statement.read::<String>(0)?,
-        token_key: statement.read::<String>(1)?,
-        data_key: statement.read::<String>(2)?,
-        from_peer_id: statement.read::<String>(3)?,
-        host_id: statement.read::<String>(4)?,
-        status: statement.read::<i64>(5)? as i64,
-        data: statement.read::<String>(6)?,
-        public_key: statement.read::<String>(7)?,
-        alias: statement.read::<String>(8)?,
-        timestamp: statement.read::<i64>(9)? as u64,
-        error_text: statement.read::<String>(10)?,
-        meta_contract_id: statement.read::<String>(11)?,
-        method: statement.read::<String>(12)?,
-        nonce: statement.read::<i64>(13)?,
-        token_id: statement.read::<String>(14)?,
-        version: statement.read::<i64>(15)?,
+        method: statement.read::<String>(1)?,
+        program_id: statement.read::<String>(2)?,
+        data_key: statement.read::<String>(3)?,
+        from_peer_id: statement.read::<String>(4)?,
+        host_id: statement.read::<String>(5)?,
+        status: statement.read::<i64>(6)? as i64,
+        data: statement.read::<String>(7)?,
+        public_key: statement.read::<String>(8)?,
+        alias: statement.read::<String>(9)?,
+        timestamp: statement.read::<i64>(10)? as u64,
+        error_text: statement.read::<String>(11)?,
+        version: statement.read::<String>(12)?,
     })
 }

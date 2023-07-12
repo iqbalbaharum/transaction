@@ -9,13 +9,16 @@ modules_dir = "artifacts/"
     name = "ipfsdag"
     mem_pages_count = 100
     logger_enabled = true
+    max_heap_size = "1 Gi"
 
     [module.mounted_binaries]
     ipfs = "/usr/local/bin/ipfs"
     bash = "/bin/bash"
 
     [module.wasi]
-    envs = { "/tmp/vault" = "/tmp" }
+    # envs = { "/tmp/vault" = "/tmp" }
+    preopened_files = ["."]
+    mapped_dirs = { "/tmp" = ".", "/tmp/vault" = "./vault" }
 
 [[module]]
     name = "sqlite3"

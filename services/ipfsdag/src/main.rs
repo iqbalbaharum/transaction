@@ -2,14 +2,22 @@
 
 mod block;
 
-use marine_rs_sdk::marine;
 use marine_rs_sdk::module_manifest;
 use marine_rs_sdk::MountedBinaryResult;
 use marine_rs_sdk::WasmLoggerBuilder;
-use types::{IpfsDagGetResult, IpfsDagPutResult};
+use marine_rs_sdk::{get_call_parameters, marine};
+use types::{IpfsDagGetResult, IpfsDagPutResult, IpfsPutResult};
 
 use block::{deserialize, serialize};
 use eyre::Result;
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use rand::distributions::Alphanumeric;
+use rand::Rng;
+
+const SITES_DIR: &str = "/tmp/";
 
 const DEFAULT_TIMEOUT_SEC: u64 = 1u64;
 const DEFAULT_IPFS_MULTIADDR: &str = "/ip4/127.0.0.1/tcp/5001";
@@ -48,8 +56,11 @@ fn get_timeout_string(timeout: u64) -> String {
     format!("{}s", timeout)
 }
 
+/**
+ * Store content string as IPLD format
+ */
 #[marine]
-pub fn put_block(
+pub fn put_ipld(
     content: String,
     previous_cid: String,
     transaction: String,
@@ -98,36 +109,11 @@ pub fn put_block(
         .into()
 }
 
+/**
+ * Retrieve IPFS-DAG data using cid
+ */
 #[marine]
-pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsDagPutResult {
-    let address: String;
-    let t;
-
-    if api_multiaddr.is_empty() {
-        address = DEFAULT_IPFS_MULTIADDR.to_string();
-    } else {
-        address = api_multiaddr;
-    }
-
-    if timeout_sec == 0 {
-        t = DEFAULT_TIMEOUT_SEC;
-    } else {
-        t = timeout_sec;
-    }
-
-    let args = make_cmd_args(vec![content], address, t);
-
-    let cmd = vec![String::from("-c"), args.join(" ")];
-
-    log::info!("ipfs put args : {:?}", cmd);
-
-    unwrap_mounted_binary_result(bash(cmd))
-        .map(|res| res.trim().to_string())
-        .into()
-}
-
-#[marine]
-pub fn get(hash: String, api_multiaddr: String, timeout_sec: u64) -> IpfsDagGetResult {
+pub fn get_ipld(hash: String, api_multiaddr: String, timeout_sec: u64) -> IpfsDagGetResult {
     let address: String;
     let t;
 
@@ -156,6 +142,80 @@ pub fn get(hash: String, api_multiaddr: String, timeout_sec: u64) -> IpfsDagGetR
         .into()
 }
 
+/**
+ * Put bytecode to IPFS
+ * to make it work in ipfs-cli, convert data to base64 and pipe it to `ipfs add`
+ */
+#[marine]
+pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutResult {
+    let address;
+
+    let t;
+
+    if api_multiaddr.is_empty() {
+        address = DEFAULT_IPFS_MULTIADDR.to_string();
+    } else {
+        address = api_multiaddr;
+    }
+
+    if timeout_sec == 0 {
+        t = DEFAULT_TIMEOUT_SEC;
+    } else {
+        t = timeout_sec;
+    }
+
+    let name: String = rand::thread_rng()
+        .sample_iter(Alphanumeric)
+        .take(16)
+        .map(char::from)
+        .collect();
+
+    let file = vault_dir().join(&name);
+    let file_str = file.to_string_lossy().to_string();
+
+    log::info!("Creating file {:?}", PathBuf::from(&file));
+
+    let result = fs::write(PathBuf::from(&file), content);
+    if let Err(e) = result {
+        log::info!("error: {:?}", e);
+        return IpfsPutResult {
+            success: false,
+            error: format!("file can't be written: {}", e),
+            cid: "".to_string(),
+        };
+    };
+
+    let input = format!("ipfs add {}", inject_vault_host_path(file_str.clone()));
+
+    let args = make_cmd_args(vec![input], address, t);
+
+    let cmd = vec![String::from("-c"), args.join(" ")];
+
+    log::info!("ipfs put args : {:?}", cmd);
+
+    unwrap_mounted_binary_result(bash(cmd))
+        .map(|res| res.trim().to_string())
+        .into()
+}
+
+fn vault_dir() -> PathBuf {
+    let particle_id = get_call_parameters().particle_id;
+    let vault = Path::new("/tmp").join("vault").join(particle_id);
+
+    vault
+}
+
+fn inject_vault_host_path(path: String) -> String {
+    let vault = "/tmp/vault";
+    if let Some(stripped) = path.strip_prefix(&vault) {
+        let host_vault_path = std::env::var(vault).expect("vault must be mapped to /tmp/vault");
+        log::info!("host vault: {} {}", host_vault_path, stripped);
+        format!("/{}/{}", host_vault_path, stripped)
+    } else {
+        path
+    }
+}
+
 #[marine]
 #[link(wasm_import_module = "host")]
 extern "C" {
@@ -164,4 +224,6 @@ extern "C" {
 
     /// Execute command, return result
     pub fn bash(cmd: Vec<String>) -> MountedBinaryResult;
+
+    fn curl(cmd: Vec<String>) -> MountedBinaryResult;
 }

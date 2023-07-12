@@ -1,15 +1,15 @@
 use crate::defaults::STATUS_PENDING;
+use chrono::Utc;
 use marine_rs_sdk::marine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-
 #[marine]
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct Transaction {
     pub hash: String,
-    pub token_key: String,
+    pub method: String,
+    pub program_id: String,
     pub data_key: String,
-    pub nonce: i64,
     pub from_peer_id: String,
     pub host_id: String,
     pub status: i64,
@@ -17,26 +17,21 @@ pub struct Transaction {
     pub public_key: String,
     pub alias: String,
     pub timestamp: u64,
-    pub meta_contract_id: String,
-    pub method: String,
     pub error_text: String,
-    pub token_id: String,
-    pub version: i64,
+    pub version: String,
 }
 
 #[marine]
 #[derive(Debug, Default)]
 pub struct TransactionRequest {
-  pub data_key: String,
-  pub token_key: String,
-  pub token_id: String,
-  pub alias: String,
-  pub public_key: String,
-  pub signature: String,
-  pub data: String,
-  pub method: String,
-  pub nonce: i64,
-  pub version: i64,
+    pub data_key: String,
+    pub program_id: String,
+    pub alias: String,
+    pub public_key: String,
+    pub signature: String,
+    pub data: String,
+    pub method: String,
+    pub version: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -51,90 +46,85 @@ pub struct TransactionSubset {
 #[marine]
 #[derive(Debug)]
 pub struct TransactionQuery {
-  pub column: String,
-  pub query: String,
-  pub op: String,
+    pub column: String,
+    pub query: String,
+    pub op: String,
 }
 
 #[marine]
 #[derive(Debug)]
 pub struct TransactionOrdering {
-  pub column: String,
-  pub sort: String,
+    pub column: String,
+    pub sort: String,
 }
 
 impl Transaction {
     pub fn new(
-        token_key: String,
+        program_id: String,
         from_peer_id: String,
         host_id: String,
         data_key: String,
-        nonce: i64,
         data: String,
         public_key: String,
         alias: String,
         timestamp: u64,
-        meta_contract_id: String,
         method: String,
-        token_id: String,
-        version: i64,
+        version: String,
+        previous_data: String,
     ) -> Self {
         let hash = Self::generate_hash(
-            token_key.clone(),
+            program_id.clone(),
             data_key.clone(),
             data.clone(),
-            nonce.clone(),
             public_key.clone(),
             alias.clone(),
             method.clone(),
-            token_id.clone(),
             version.clone(),
+            previous_data,
         );
 
         Self {
             hash,
-            token_key,
+            method,
+            program_id,
+            data_key,
             from_peer_id,
             host_id,
             status: STATUS_PENDING,
-            data_key,
-            nonce,
             data,
             public_key,
             alias,
             timestamp,
-            meta_contract_id,
-            method,
             error_text: "".to_string(),
-            token_id,
             version,
         }
     }
 
+    /**
+     * Generating new transaction hash
+     * Using the formula hash(tx datas + previous_data)
+     * This hash would only prevent replay attach if the transaction content is similar from the current content.
+     * A good example is health/mana level - There will be multiple duplicate data
+     */
     pub fn generate_hash(
-        token_key: String,
+        program_id: String,
         data_key: String,
         data: String,
-        nonce: i64,
         public_key: String,
         alias: String,
         method: String,
-        token_id: String,
-        version: i64,
+        version: String,
+        previous_content: String,
     ) -> String {
+        let timestamp = Utc::now().timestamp();
+        let timestamp_with_date = timestamp / 60 * 60;
+        let timestamp_str = timestamp_with_date.to_string();
+
         let mut hasher = Sha256::new();
         hasher.update(
             format!(
-                "{}{}{}{}{}{}{}{}{}",
-                token_key,
-                data_key,
-                nonce,
-                data,
-                public_key,
-                alias,
-                method,
-                token_id,
-                version
+                "{}{}{}{}{}{}{}{}",
+                program_id, data_key, data, public_key, alias, method, version, timestamp_str
             )
             .as_bytes(),
         );

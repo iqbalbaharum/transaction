@@ -53,9 +53,9 @@ data FdbCronsResult:
   crons: []CronResult
 
 data MetaContract:
-  token_key: string
-  meta_contract_id: string
+  program_id: string
   public_key: string
+  cid: string
 
 data FdbMetaContractResult:
   success: bool
@@ -71,9 +71,12 @@ data FdbMetadataHistoryResult:
 data Metadata:
   hash: string
   data_key: string
+  program_id: string
   alias: string
   cid: string
+  version: string
   public_key: string
+  loose: bool
 
 data FdbMetadataResult:
   success: bool
@@ -90,9 +93,9 @@ data FdbResult:
 
 data Transaction:
   hash: string
-  token_key: string
+  method: string
+  program_id: string
   data_key: string
-  nonce: i64
   from_peer_id: string
   host_id: string
   status: i64
@@ -100,11 +103,8 @@ data Transaction:
   public_key: string
   alias: string
   timestamp: u64
-  meta_contract_id: string
-  method: string
   error_text: string
-  token_id: string
-  version: i64
+  version: string
 
 data FdbTransactionResult:
   success: bool
@@ -118,8 +118,10 @@ data FdbTransactionsResult:
 
 data FinalMetadata:
   public_key: string
+  program_id: string
   alias: string
   content: string
+  version: string
 
 data MetadataOrdering:
   column: string
@@ -141,15 +143,13 @@ data TransactionQuery:
 
 data TransactionRequest:
   data_key: string
-  token_key: string
-  token_id: string
+  program_id: string
   alias: string
   public_key: string
   signature: string
   data: string
   method: string
-  nonce: i64
-  version: i64
+  version: string
 
 service Node("transaction"):
   bind_meta_contract(transaction_hash: string)  
@@ -161,19 +161,19 @@ service Node("transaction"):
   get_cron_tx_latest_block(address: string, chain: string, topic: string) -> u64
   get_meta_contract(token_key: string) -> FdbMetaContractResult
   get_meta_contract_by_id(meta_contract_id: string) -> FdbMetaContractResult
-  get_metadata(data_key: string, public_key: string, alias: string) -> FdbMetadataResult
-  get_metadata_with_history(data_key: string, public_key: string, alias: string) -> FdbMetadataHistoryResult
-  get_metadatas(data_key: string) -> FdbMetadatasResult
+  get_metadata(data_key: string, program_id: string, public_key: string, alias: string, version: string) -> FdbMetadataResult
+  get_metadata_with_history(data_key: string, program_id: string, public_key: string, alias: string, version: string) -> FdbMetadataHistoryResult
+  get_metadatas(data_key: string, version: string) -> FdbMetadatasResult
   get_node_clock() -> FdbClock
   get_pending_transactions() -> FdbTransactionsResult
   get_success_transactions(from: i64, to: i64) -> FdbTransactionsResult
   get_transaction(hash: string) -> FdbTransactionResult
   get_transactions(query: []TransactionQuery, ordering: []TransactionOrdering, from: u32, to: u32) -> FdbTransactionsResult
+  publish(data_key: string, method: string, alias: string, public_key: string, program_id: string, signature: string, data: string, version: string) -> FdbResult
   search_cron_tx(address: string, chain: string, topic: string) -> FdbCronTxsResult
   search_metadatas(query: []MetadataQuery, ordering: []MetadataOrdering, from: u32, to: u32) -> FdbMetadatasResult
   send_batch_transaction(txs: []TransactionRequest) -> []FdbResult
   send_cron_tx(hash: string, data_key: string, data: string, tx_block_number: u64, tx_hash: string, token_id: string) -> FdbCronTxResult
-  send_transaction(data_key: string, token_key: string, token_id: string, alias: string, public_key: string, signature: string, data: string, method: string, nonce: i64, version: i64) -> FdbResult
   set_clone(transaction_hash: string, meta_contract_id: string, on_metacontract_result: bool, data: string, final_error_msg: string)  
   set_cron(transaction_hash: string, data: string)  
   set_metadata(transaction_hash: string, meta_contract_id: string, on_metacontract_result: bool, metadatas: []FinalMetadata, final_error_msg: string)  

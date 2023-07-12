@@ -50,3 +50,53 @@ impl From<Result<String>> for IpfsDagGetResult {
         }
     }
 }
+
+#[marine]
+#[derive(Debug)]
+pub struct IpfsPutResult {
+    pub success: bool,
+    pub error: String,
+    pub cid: String,
+}
+
+impl From<Result<String>> for IpfsPutResult {
+    fn from(result: Result<String>) -> Self {
+        match result {
+            Ok(cid) => Self {
+                success: true,
+                error: "".to_string(),
+                cid,
+            },
+            Err(err) => Self {
+                success: false,
+                error: err.to_string(),
+                cid: "".to_string(),
+            },
+        }
+    }
+}
+
+#[marine]
+#[derive(Debug)]
+pub struct IpfsGetResult {
+    pub success: bool,
+    pub error: String,
+    pub block: Vec<u8>,
+}
+
+impl From<Result<Vec<u8>>> for IpfsGetResult {
+    fn from(result: Result<Vec<u8>>) -> Self {
+        match result {
+            Ok(block) => Self {
+                success: true,
+                error: "".to_string(),
+                block,
+            },
+            Err(err) => Self {
+                success: false,
+                error: err.to_string(),
+                block: Vec::new(),
+            },
+        }
+    }
+}
