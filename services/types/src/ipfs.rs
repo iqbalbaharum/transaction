@@ -62,10 +62,14 @@ pub struct IpfsPutResult {
 impl From<Result<String>> for IpfsPutResult {
     fn from(result: Result<String>) -> Self {
         match result {
-            Ok(cid) => Self {
-                success: true,
-                error: "".to_string(),
-                cid,
+            Ok(res) => {
+                let parts: Vec<&str> = res.split(' ').collect();
+
+                return Self {
+                    success: true,
+                    error: "".to_string(),
+                    cid: parts[1].to_string(),
+                }
             },
             Err(err) => Self {
                 success: false,

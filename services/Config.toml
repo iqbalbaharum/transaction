@@ -14,17 +14,18 @@ modules_dir = "artifacts/"
     [module.mounted_binaries]
     ipfs = "/usr/local/bin/ipfs"
     bash = "/bin/bash"
+    curl = "/usr/bin/curl"
 
     [module.wasi]
     # envs = { "/tmp/vault" = "/tmp" }
-    preopened_files = ["."]
-    mapped_dirs = { "/tmp" = ".", "/tmp/vault" = "./vault" }
+    preopened_files = ["./tmp"]
+    mapped_dirs = { "/tmp" = "./tmp", "/tmp/vault" = "./tmp/vault" }
 
 [[module]]
     name = "sqlite3"
 
     [module.wasi]
-    preopened_files = ["/tmp"]
+    preopened_files = ["./tmp"]
     mapped_dirs = { "tmp" = "./tmp" }
 
 [[module]]
@@ -33,5 +34,5 @@ modules_dir = "artifacts/"
     logger_enabled = true
 
     [module.wasi]
-    preopened_files = ["/tmp"]
-    mapped_dirs = { "tmp" = "/tmp" }
+    preopened_files = ["./tmp"]
+    mapped_dirs = { "tmp" = "./tmp" }

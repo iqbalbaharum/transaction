@@ -14,11 +14,6 @@ use eyre::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rand::distributions::Alphanumeric;
-use rand::Rng;
-
-const SITES_DIR: &str = "/tmp/";
-
 const DEFAULT_TIMEOUT_SEC: u64 = 1u64;
 const DEFAULT_IPFS_MULTIADDR: &str = "/ip4/127.0.0.1/tcp/5001";
 
@@ -164,18 +159,18 @@ pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutR
         t = timeout_sec;
     }
 
-    let name: String = rand::thread_rng()
-        .sample_iter(Alphanumeric)
-        .take(16)
-        .map(char::from)
-        .collect();
-
-    let file = vault_dir().join(&name);
+    let file = vault_dir().join("raw".to_string());
     let file_str = file.to_string_lossy().to_string();
 
-    log::info!("Creating file {:?}", PathBuf::from(&file));
+    let result: Result<_, _>;
 
-    let result = fs::write(PathBuf::from(&file), content);
+    if is_base64(&content) {
+        let decode_content = base64::decode(content.clone()).unwrap();
+        result = fs::write(PathBuf::from(&file), decode_content);
+    } else {
+        result = fs::write(PathBuf::from(&file), content.clone());
+    }
+
     if let Err(e) = result {
         log::info!("error: {:?}", e);
         return IpfsPutResult {
@@ -184,8 +179,8 @@ pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutR
             cid: "".to_string(),
         };
     };
-
-    let input = format!("ipfs add {}", inject_vault_host_path(file_str.clone()));
+    
+    let input = format!("ipfs add {}", "tmp/vault/raw");
 
     let args = make_cmd_args(vec![input], address, t);
 
@@ -200,7 +195,7 @@ pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutR
 
 fn vault_dir() -> PathBuf {
     let particle_id = get_call_parameters().particle_id;
-    let vault = Path::new("/tmp").join("vault").join(particle_id);
+    let vault = Path::new("/tmp").join("vault");
 
     vault
 }
@@ -210,9 +205,17 @@ fn inject_vault_host_path(path: String) -> String {
     if let Some(stripped) = path.strip_prefix(&vault) {
         let host_vault_path = std::env::var(vault).expect("vault must be mapped to /tmp/vault");
         log::info!("host vault: {} {}", host_vault_path, stripped);
-        format!("/{}/{}", host_vault_path, stripped)
+        format!("/{}{}", host_vault_path, stripped)
     } else {
         path
+    }
+}
+
+fn is_base64(input: &str) -> bool {
+    // Attempt to decode the input string
+    match base64::decode(input) {
+        Ok(_) => true,   // The string is Base64 encoded
+        Err(_) => false, // The string is not Base64 encoded
     }
 }
 

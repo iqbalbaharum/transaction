@@ -23,10 +23,10 @@ pub fn validate_meta_contract(transaction_hash: String) {
     // Get data
     let mut transaction = storage.get_transaction(transaction_hash).unwrap().clone();
 
-    log::info!("putting file to ipfs");
-
     // push the data to ipfs
     let result = put(transaction.data, "".to_string(), 0);
+
+    log::info!("putting file to ipfs: {}", result.cid);
 
     // update metadata table
     let meta_contract = MetaContract {
@@ -36,6 +36,8 @@ pub fn validate_meta_contract(transaction_hash: String) {
     };
 
     let meta_result = storage.write_meta_contract(meta_contract);
+
+    log::info!("{:?}", meta_result);
 
     if !error.is_none() {
         transaction.error_text = error.unwrap().to_string();

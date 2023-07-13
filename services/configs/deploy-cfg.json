@@ -14,7 +14,9 @@
           ["ipfs", "/usr/bin/ipfs"],
           ["bash", "/usr/bin/bash"]
         ],
-        "envs": [["/tmp/vault", "./tmp"]]
+        "envs": [["/tmp/vault", "./tmp"]],
+        "preopened_files": ["./sites/"],
+        "mapped_dirs": [["sites", "./sites"]]
       },
       {
         "name": "sqlite3",

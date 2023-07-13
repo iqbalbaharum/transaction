@@ -15,6 +15,5 @@ eyre = "0.6.5"
 serde_json = "1.0.64"
 serde = "1.0.152"
 base64 = "0.20.0"
-rand = "0.8.5"
 
 types = { path = "../types" }
