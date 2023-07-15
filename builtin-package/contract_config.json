@@ -1,0 +1,5 @@
+{
+  "name": "contract",
+  "max_heap_size": "1 GiB",
+  "logger_enabled": true
+}

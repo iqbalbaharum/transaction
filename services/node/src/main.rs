@@ -87,6 +87,7 @@ pub fn publish(
     signature: String,
     data: String,
     version: String,
+    mcdata: String,
 ) -> FdbResult {
     let mut program_id = program_id;
     let mut error: Option<ServiceError> = None;
@@ -282,6 +283,7 @@ pub fn publish(
         timestamp.as_millis() as u64,
         method,
         hasher(version),
+        mcdata,
         content,
     );
 
@@ -311,6 +313,7 @@ pub fn send_batch_transaction(txs: Vec<TransactionRequest>) -> Vec<FdbResult> {
             tx.signature,
             tx.data,
             tx.version,
+            tx.mcdata,
         );
 
         results.push(result);
@@ -594,7 +597,6 @@ pub fn set_metadata(
 ) {
     validate_metadata(
         transaction_hash,
-        meta_contract_id,
         on_metacontract_result,
         metadatas,
         final_error_msg,
@@ -656,8 +658,8 @@ extern "C" {
     #[link_name = "get_ipld"]
     pub fn get_ipld(hash: String, api_multiaddr: String, timeout_sec: u64) -> IpfsDagGetResult;
 
-    #[link_name = "put"]
-    pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutResult;
+    #[link_name = "put_contract"]
+    pub fn put_contract(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutResult;
 }
 
 #[marine]

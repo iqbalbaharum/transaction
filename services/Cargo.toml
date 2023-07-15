@@ -2,5 +2,6 @@
 members = [
     "crypto",
     "ipfsdag",
+    "contract",
     "node",
 ]

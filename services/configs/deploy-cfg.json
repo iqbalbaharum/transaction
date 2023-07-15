@@ -19,6 +19,11 @@
         "mapped_dirs": [["sites", "./sites"]]
       },
       {
+        "name": "contract",
+        "path": "./artifacts/contract.wasm",
+        "logger_enabled": true
+      },
+      {
         "name": "sqlite3",
         "path": "./artifacts/sqlite3.wasm",
         "preopened_files": ["./tmp"],

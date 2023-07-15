@@ -105,6 +105,7 @@ data Transaction:
   timestamp: u64
   error_text: string
   version: string
+  mcdata: string
 
 data FdbTransactionResult:
   success: bool
@@ -150,6 +151,7 @@ data TransactionRequest:
   data: string
   method: string
   version: string
+  mcdata: string
 
 service Node("transaction"):
   bind_meta_contract(transaction_hash: string)  
@@ -169,7 +171,7 @@ service Node("transaction"):
   get_success_transactions(from: i64, to: i64) -> FdbTransactionsResult
   get_transaction(hash: string) -> FdbTransactionResult
   get_transactions(query: []TransactionQuery, ordering: []TransactionOrdering, from: u32, to: u32) -> FdbTransactionsResult
-  publish(data_key: string, method: string, alias: string, public_key: string, program_id: string, signature: string, data: string, version: string) -> FdbResult
+  publish(data_key: string, method: string, alias: string, public_key: string, program_id: string, signature: string, data: string, version: string, mcdata: string) -> FdbResult
   search_cron_tx(address: string, chain: string, topic: string) -> FdbCronTxsResult
   search_metadatas(query: []MetadataQuery, ordering: []MetadataOrdering, from: u32, to: u32) -> FdbMetadatasResult
   send_batch_transaction(txs: []TransactionRequest) -> []FdbResult

@@ -22,7 +22,8 @@ impl Storage {
                 alias TEXT,
                 timestamp INTEGER NOT NULL,
                 error_text TEXT NULL,
-                version varchar(32) NOT NULL
+                version varchar(32) NOT NULL,
+                mcdata TEXT NULL
             );",
             TRANSACTIONS_TABLE_NAME
         );
@@ -36,7 +37,7 @@ impl Storage {
 
     pub fn write_transaction(&self, transaction: Transaction) -> Result<String, ServiceError> {
         let s = format!(
-            "insert into {} (hash, method, program_id, data_key, from_peer_id, host_id, status, data, public_key, alias, timestamp, error_text, version) values ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
+            "insert into {} (hash, method, program_id, data_key, from_peer_id, host_id, status, data, public_key, alias, timestamp, error_text, version, mcdata) values ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
             TRANSACTIONS_TABLE_NAME,
             transaction.hash,
             transaction.method,
@@ -51,6 +52,7 @@ impl Storage {
             transaction.timestamp,
             transaction.error_text,
             transaction.version,
+            transaction.mcdata
         );
 
         let result = self.connection.execute(s);
@@ -204,5 +206,6 @@ pub fn read(statement: &Statement) -> Result<Transaction, ServiceError> {
         timestamp: statement.read::<i64>(10)? as u64,
         error_text: statement.read::<String>(11)?,
         version: statement.read::<String>(12)?,
+        mcdata: statement.read::<String>(13)?,
     })
 }

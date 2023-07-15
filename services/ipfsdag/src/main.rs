@@ -2,11 +2,11 @@
 
 mod block;
 
+use marine_rs_sdk::marine;
 use marine_rs_sdk::module_manifest;
 use marine_rs_sdk::MountedBinaryResult;
 use marine_rs_sdk::WasmLoggerBuilder;
-use marine_rs_sdk::{get_call_parameters, marine};
-use types::{IpfsDagGetResult, IpfsDagPutResult, IpfsPutResult};
+use types::{IpfsDagGetResult, IpfsDagPutResult, IpfsGetResult, IpfsPutResult};
 
 use block::{deserialize, serialize};
 use eyre::Result;
@@ -142,7 +142,7 @@ pub fn get_ipld(hash: String, api_multiaddr: String, timeout_sec: u64) -> IpfsDa
  * to make it work in ipfs-cli, convert data to base64 and pipe it to `ipfs add`
  */
 #[marine]
-pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutResult {
+pub fn put_contract(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutResult {
     let address;
 
     let t;
@@ -159,8 +159,7 @@ pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutR
         t = timeout_sec;
     }
 
-    let file = vault_dir().join("raw".to_string());
-    let file_str = file.to_string_lossy().to_string();
+    let file = "/tmp/vault/raw";
 
     let result: Result<_, _>;
 
@@ -179,7 +178,7 @@ pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutR
             cid: "".to_string(),
         };
     };
-    
+
     let input = format!("ipfs add {}", "tmp/vault/raw");
 
     let args = make_cmd_args(vec![input], address, t);
@@ -193,24 +192,56 @@ pub fn put(content: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutR
         .into()
 }
 
-fn vault_dir() -> PathBuf {
-    let particle_id = get_call_parameters().particle_id;
-    let vault = Path::new("/tmp").join("vault");
+/**
+ * Retrieve contract bytecode from IPFS
+ * @return block Vec<u8>
+ */
+#[marine]
+pub fn get_contract(cid: String, api_multiaddr: String, timeout_sec: u64) -> IpfsGetResult {
+    let address;
 
-    vault
-}
+    let t;
 
-fn inject_vault_host_path(path: String) -> String {
-    let vault = "/tmp/vault";
-    if let Some(stripped) = path.strip_prefix(&vault) {
-        let host_vault_path = std::env::var(vault).expect("vault must be mapped to /tmp/vault");
-        log::info!("host vault: {} {}", host_vault_path, stripped);
-        format!("/{}{}", host_vault_path, stripped)
+    if api_multiaddr.is_empty() {
+        address = DEFAULT_IPFS_MULTIADDR.to_string();
     } else {
-        path
+        address = api_multiaddr;
+    }
+
+    if timeout_sec == 0 {
+        t = DEFAULT_TIMEOUT_SEC;
+    } else {
+        t = timeout_sec;
+    }
+
+    let input = format!("ipfs get {}", cid.to_string());
+
+    let args = make_cmd_args(vec![input], address, t);
+
+    let cmd = vec![args.join(" ")];
+
+    log::info!("ipfs get args : {:?}", cmd);
+
+    let result_mounted_binary: MountedBinaryResult = bash(cmd);
+
+    if result_mounted_binary.is_success() {
+        IpfsGetResult {
+            success: true,
+            error: "".to_string(),
+            block: result_mounted_binary.stdout,
+        }
+    } else {
+        IpfsGetResult {
+            success: false,
+            error: String::from_utf8(result_mounted_binary.stderr).unwrap(),
+            block: Vec::new(),
+        }
     }
 }
 
+/**
+ * Check if the input is a base64 string
+ */
 fn is_base64(input: &str) -> bool {
     // Attempt to decode the input string
     match base64::decode(input) {
@@ -227,6 +258,4 @@ extern "C" {
 
     /// Execute command, return result
     pub fn bash(cmd: Vec<String>) -> MountedBinaryResult;
-
-    fn curl(cmd: Vec<String>) -> MountedBinaryResult;
 }

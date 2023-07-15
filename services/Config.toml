@@ -22,6 +22,12 @@ modules_dir = "artifacts/"
     mapped_dirs = { "/tmp" = "./tmp", "/tmp/vault" = "./tmp/vault" }
 
 [[module]]
+    name = "contract"
+    mem_pages_count = 100
+    logger_enabled = true
+    max_heap_size = "1 Gi"
+    
+[[module]]
     name = "sqlite3"
 
     [module.wasi]

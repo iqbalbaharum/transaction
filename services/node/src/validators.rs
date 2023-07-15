@@ -8,7 +8,7 @@ use crate::metadatas::{FinalMetadata, Metadata};
 use crate::transaction::TransactionSubset;
 use crate::{defaults::STATUS_FAILED, defaults::STATUS_SUCCESS};
 use crate::{error::ServiceError, error::ServiceError::*};
-use crate::{get_ipld, put, put_ipld};
+use crate::{get_ipld, put_contract, put_ipld};
 use crate::{meta_contract::MetaContract, storage_impl::get_storage};
 
 /**
@@ -24,7 +24,7 @@ pub fn validate_meta_contract(transaction_hash: String) {
     let mut transaction = storage.get_transaction(transaction_hash).unwrap().clone();
 
     // push the data to ipfs
-    let result = put(transaction.data, "".to_string(), 0);
+    let result = put_contract(transaction.data, "".to_string(), 0);
 
     log::info!("putting file to ipfs: {}", result.cid);
 
@@ -54,14 +54,6 @@ pub fn validate_meta_contract(transaction_hash: String) {
     );
 }
 
-pub fn validate_metadata(
-    transaction_hash: String,
-    meta_contract_id: String,
-    on_metacontract_result: bool,
-    metadatas: Vec<FinalMetadata>,
-    final_error_msg: String,
-) {
-}
 pub fn validate_metadata_cron(
     data_key: String,
     on_metacontract_result: bool,
@@ -80,103 +72,102 @@ pub fn validate_clone(
 
 pub fn validate_cron(transaction_hash: String, data: String) {}
 
-// /**
-//  * Validated "metadata" method type
-//  */
-// pub fn validate_metadata(
-//     transaction_hash: String,
-//     meta_contract_id: String,
-//     on_metacontract_result: bool,
-//     metadatas: Vec<FinalMetadata>,
-//     final_error_msg: String,
-// ) {
-//     let storage = get_storage().expect("Internal error to database connector");
-//     let mut transaction = storage.get_transaction(transaction_hash).unwrap().clone();
+/**
+ * Validated "metadata" method type
+ */
+pub fn validate_metadata(
+    transaction_hash: String,
+    on_metacontract_result: bool,
+    metadatas: Vec<FinalMetadata>,
+    final_error_msg: String,
+) {
+    let storage = get_storage().expect("Internal error to database connector");
+    let mut transaction = storage.get_transaction(transaction_hash).unwrap().clone();
 
-//     if !on_metacontract_result {
-//         transaction.status = STATUS_FAILED;
-//         if final_error_msg.is_empty() {
-//             transaction.error_text = "Metadata not updateable".to_string();
-//         } else {
-//             transaction.error_text = final_error_msg;
-//         }
-//     } else {
-//         for data in metadatas {
-//             let result = storage.get_owner_metadata(
-//                 transaction.data_key.clone(),
-//                 data.program_id.clone(),
-//                 data.public_key.clone(),
-//                 data.alias.clone(),
-//                 data.version.clone(),
-//             );
+    if !on_metacontract_result {
+        transaction.status = STATUS_FAILED;
+        if final_error_msg.is_empty() {
+            transaction.error_text = "Metadata not updateable".to_string();
+        } else {
+            transaction.error_text = final_error_msg;
+        }
+    } else {
+        // for data in metadatas {
+        //     let result = storage.get_owner_metadata(
+        //         transaction.data_key.clone(),
+        //         data.program_id.clone(),
+        //         data.public_key.clone(),
+        //         data.alias.clone(),
+        //         data.version.clone(),
+        //     );
 
-//             log::info!("{:?}", result);
+        //     log::info!("{:?}", result);
 
-//             match result {
-//                 Ok(metadata) => {
-//                     transaction.status = STATUS_SUCCESS;
+        //     match result {
+        //         Ok(metadata) => {
+        //             transaction.status = STATUS_SUCCESS;
 
-//                     let tx = TransactionSubset {
-//                         hash: transaction.hash.clone(),
-//                         timestamp: transaction.timestamp.clone(),
-//                         meta_contract_id: meta_contract_id.clone(),
-//                         method: transaction.method.clone(),
-//                         value: "".to_string(),
-//                     };
+        //             let tx = TransactionSubset {
+        //                 hash: transaction.hash.clone(),
+        //                 timestamp: transaction.timestamp.clone(),
+        //                 meta_contract_id: meta_contract_id.clone(),
+        //                 method: transaction.method.clone(),
+        //                 value: "".to_string(),
+        //             };
 
-//                     let tx_serde = serde_json::to_string(&tx).unwrap();
+        //             let tx_serde = serde_json::to_string(&tx).unwrap();
 
-//                     let result_ipfs_dag_put =
-//                         put_block(data.content, metadata.cid, tx_serde, "".to_string(), 0);
-//                     let content_cid = result_ipfs_dag_put.cid;
+        //             let result_ipfs_dag_put =
+        //                 put_block(data.content, metadata.cid, tx_serde, "".to_string(), 0);
+        //             let content_cid = result_ipfs_dag_put.cid;
 
-//                     let _ = storage.update_cid(
-//                         metadata.data_key,
-//                         metadata.alias,
-//                         metadata.public_key,
-//                         content_cid,
-//                     );
-//                 }
-//                 Err(ServiceError::RecordNotFound(_)) => {
-//                     transaction.status = STATUS_SUCCESS;
+        //             let _ = storage.update_cid(
+        //                 metadata.data_key,
+        //                 metadata.alias,
+        //                 metadata.public_key,
+        //                 content_cid,
+        //             );
+        //         }
+        //         Err(ServiceError::RecordNotFound(_)) => {
+        //             transaction.status = STATUS_SUCCESS;
 
-//                     let tx = TransactionSubset {
-//                         hash: transaction.hash.clone(),
-//                         timestamp: transaction.timestamp.clone(),
-//                         meta_contract_id: meta_contract_id.clone(),
-//                         method: transaction.method.clone(),
-//                         value: "".to_string(),
-//                     };
+        //             let tx = TransactionSubset {
+        //                 hash: transaction.hash.clone(),
+        //                 timestamp: transaction.timestamp.clone(),
+        //                 meta_contract_id: meta_contract_id.clone(),
+        //                 method: transaction.method.clone(),
+        //                 value: "".to_string(),
+        //             };
 
-//                     let tx_serde = serde_json::to_string(&tx).unwrap();
+        //             let tx_serde = serde_json::to_string(&tx).unwrap();
 
-//                     let result_ipfs_dag_put =
-//                         put_block(data.content, "".to_string(), tx_serde, "".to_string(), 0);
-//                     let content_cid = result_ipfs_dag_put.cid;
+        //             let result_ipfs_dag_put =
+        //                 put_block(data.content, "".to_string(), tx_serde, "".to_string(), 0);
+        //             let content_cid = result_ipfs_dag_put.cid;
 
-//                     let metadata = Metadata::new(
-//                         transaction.data_key.clone(),
-//                         data.alias.clone(),
-//                         content_cid,
-//                         data.public_key.clone(),
-//                     );
+        //             let metadata = Metadata::new(
+        //                 transaction.data_key.clone(),
+        //                 data.alias.clone(),
+        //                 content_cid,
+        //                 data.public_key.clone(),
+        //             );
 
-//                     let _ = storage.write_metadata(metadata);
-//                 }
-//                 Err(e) => {
-//                     transaction.error_text = e.to_string();
-//                     transaction.status = STATUS_FAILED;
-//                 }
-//             };
-//         }
-//     }
+        //             let _ = storage.write_metadata(metadata);
+        //         }
+        //         Err(e) => {
+        //             transaction.error_text = e.to_string();
+        //             transaction.status = STATUS_FAILED;
+        //         }
+        //     };
+        // }
+    }
 
-//     let _ = storage.update_transaction_status(
-//         transaction.hash.clone(),
-//         transaction.status.clone(),
-//         transaction.error_text.clone(),
-//     );
-// }
+    let _ = storage.update_transaction_status(
+        transaction.hash.clone(),
+        transaction.status.clone(),
+        transaction.error_text.clone(),
+    );
+}
 
 // /**
 //  * Validated "metadata cron" method type

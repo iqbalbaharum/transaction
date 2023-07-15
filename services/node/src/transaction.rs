@@ -19,6 +19,7 @@ pub struct Transaction {
     pub timestamp: u64,
     pub error_text: String,
     pub version: String,
+    pub mcdata: String,
 }
 
 #[marine]
@@ -32,6 +33,7 @@ pub struct TransactionRequest {
     pub data: String,
     pub method: String,
     pub version: String,
+    pub mcdata: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -70,6 +72,7 @@ impl Transaction {
         timestamp: u64,
         method: String,
         version: String,
+        mcdata: String,
         previous_data: String,
     ) -> Self {
         let hash = Self::generate_hash(
@@ -80,6 +83,7 @@ impl Transaction {
             alias.clone(),
             method.clone(),
             version.clone(),
+            mcdata.clone(),
             previous_data,
         );
 
@@ -97,6 +101,7 @@ impl Transaction {
             timestamp,
             error_text: "".to_string(),
             version,
+            mcdata,
         }
     }
 
@@ -115,16 +120,21 @@ impl Transaction {
         method: String,
         version: String,
         previous_content: String,
+        mcdata: String,
     ) -> String {
-        let timestamp = Utc::now().timestamp();
-        let timestamp_with_date = timestamp / 60 * 60;
-        let timestamp_str = timestamp_with_date.to_string();
-
         let mut hasher = Sha256::new();
         hasher.update(
             format!(
-                "{}{}{}{}{}{}{}{}",
-                program_id, data_key, data, public_key, alias, method, version, timestamp_str
+                "{}{}{}{}{}{}{}{}{}",
+                program_id,
+                data_key,
+                data,
+                public_key,
+                alias,
+                method,
+                version,
+                mcdata,
+                previous_content
             )
             .as_bytes(),
         );
