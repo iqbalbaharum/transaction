@@ -1,9 +1,7 @@
 use crate::defaults::METADATAS_TABLE_NAME;
 use crate::error::ServiceError;
-use crate::error::ServiceError::RecordNotFound;
-use crate::metadatas::{Metadata, MetadataOrdering, MetadataQuery};
-use crate::storage_impl::Storage;
-use marine_sqlite_connector::{State, Statement, Value};
+use crate::metadatas::Metadata;
+use crate::storage_impl::{RQLiteResult, Row, Storage};
 
 impl Storage {
     pub fn create_metadatas_table(&self) {
@@ -22,11 +20,7 @@ impl Storage {
             METADATAS_TABLE_NAME
         );
 
-        let result = self.connection.execute(table_schema);
-
-        if let Err(error) = result {
-            println!("create_transactions_table error: {}", error);
-        }
+        let result = Storage::execute(table_schema);
     }
 
     /**
@@ -47,14 +41,8 @@ impl Storage {
             metadata.loose
         );
 
-        let result = self.connection.execute(s);
-        match result {
-            Ok(_) => return Ok(()),
-            Err(error) => {
-                log::info!("{:?}", error);
-                return Ok(());
-            }
-        }
+        let result = Storage::execute(s);
+        Ok(())
     }
 
     pub fn update_cid(
@@ -66,15 +54,16 @@ impl Storage {
         cid: String,
         version: String,
     ) -> Result<(), ServiceError> {
-        self.connection.execute(format!(
+        let s = format!(
             "
           update {}
           set cid = '{}'
           where data_key = '{}' AND version = '{}' AND program_id = '{}' AND alias = '{}' AND public_key = '{}';
           ",
             METADATAS_TABLE_NAME, cid, data_key, program_id, version, alias, public_key
-        ))?;
+        );
 
+        let result = Storage::execute(s);
         Ok(())
     }
 
@@ -86,20 +75,19 @@ impl Storage {
         alias: String,
         version: String,
     ) -> Result<Metadata, ServiceError> {
-        let mut statement = self
-            .connection
-            .prepare(format!(
-                "SELECT * FROM {} WHERE data_key = '{}' AND version = '{}' AND program_id = '{}' AND public_key = '{}' AND alias = '{}'",
-                METADATAS_TABLE_NAME, data_key, version, program_id, public_key, alias
-            ))
-            .unwrap();
+        let statement = format!(
+            "SELECT * FROM {} WHERE data_key = '{}' AND version = '{}' AND program_id = '{}' AND public_key = '{}' AND alias = '{}'",
+            METADATAS_TABLE_NAME, data_key, version, program_id, public_key, alias
+        );
 
-        if let State::Row = statement.next()? {
-            read(&statement)
-        } else {
-            Err(RecordNotFound(f!(
-                "{data_key}#{program_id}#{public_key}#{alias}#{version}"
-            )))
+        let result = Storage::read(statement)?;
+        let metas = read(result)?;
+        match read(result) {
+            Ok(metas) => metas
+                .first()
+                .cloned()
+                .ok_or_else(|| ServiceError::RecordNotFound("No record found".to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -108,82 +96,86 @@ impl Storage {
         data_key: String,
         version: String,
     ) -> Result<Vec<Metadata>, ServiceError> {
-        let mut statement = self.connection.prepare(f!(
-            "SELECT * FROM {METADATAS_TABLE_NAME} WHERE data_key = ? AND version = ?"
-        ))?;
-
-        statement.bind(1, &Value::String(data_key.clone()))?;
-        statement.bind(2, &Value::String(version.clone()))?;
-
-        let mut metadatas = vec![];
-
-        while let State::Row = statement.next()? {
-            metadatas.push(read(&statement)?);
-        }
-
-        Ok(metadatas)
-    }
-
-    pub fn search_metadatas(
-        &self,
-        query: Vec<MetadataQuery>,
-        ordering: Vec<MetadataOrdering>,
-        from: u32,
-        to: u32,
-    ) -> Result<Vec<Metadata>, ServiceError> {
-        let mut query_str = "".to_string();
-        let mut ordering_str = "".to_string();
-        let mut limit_str = "".to_string();
-
-        if query.len() > 0 {
-            let queries: Vec<String> = query
-                .into_iter()
-                .map(|param| format!("{} {} '{}'", param.column, param.op, param.query))
-                .collect();
-
-            query_str = format!("WHERE {}", queries.join(" AND "));
-        }
-
-        if ordering.len() > 0 {
-            let orders: Vec<String> = ordering
-                .into_iter()
-                .map(|param| format!("{} {}", param.column, param.sort))
-                .collect();
-
-            ordering_str = format!("ORDER BY {}", orders.join(", "));
-        }
-        if to > 0 {
-            limit_str = format!("LIMIT {},{}", from, to);
-        }
-
-        let s = format!(
-            "SELECT * FROM {} {} {} {}",
-            METADATAS_TABLE_NAME, query_str, ordering_str, limit_str
+        let statement = format!(
+            "SELECT * FROM {} WHERE data_key = {} AND version = {}",
+            METADATAS_TABLE_NAME,
+            data_key.clone(),
+            version.clone()
         );
 
-        log::info!("{}", s.clone());
-
-        let mut statement = self.connection.prepare(s)?;
-
-        let mut metadatas = Vec::new();
-
-        while let State::Row = statement.next()? {
-            metadatas.push(read(&statement)?);
+        let result = Storage::read(statement)?;
+        let metas = read(result)?;
+        match read(result) {
+            Ok(metas) => Ok(metas),
+            Err(e) => Err(e),
         }
-
-        Ok(metadatas)
     }
+
+    // pub fn search_metadatas(
+    //     &self,
+    //     query: Vec<MetadataQuery>,
+    //     ordering: Vec<MetadataOrdering>,
+    //     from: u32,
+    //     to: u32,
+    // ) -> Result<Vec<Metadata>, ServiceError> {
+    //     let mut query_str = "".to_string();
+    //     let mut ordering_str = "".to_string();
+    //     let mut limit_str = "".to_string();
+
+    //     if query.len() > 0 {
+    //         let queries: Vec<String> = query
+    //             .into_iter()
+    //             .map(|param| format!("{} {} '{}'", param.column, param.op, param.query))
+    //             .collect();
+
+    //         query_str = format!("WHERE {}", queries.join(" AND "));
+    //     }
+
+    //     if ordering.len() > 0 {
+    //         let orders: Vec<String> = ordering
+    //             .into_iter()
+    //             .map(|param| format!("{} {}", param.column, param.sort))
+    //             .collect();
+
+    //         ordering_str = format!("ORDER BY {}", orders.join(", "));
+    //     }
+    //     if to > 0 {
+    //         limit_str = format!("LIMIT {},{}", from, to);
+    //     }
+
+    //     let s = format!(
+    //         "SELECT * FROM {} {} {} {}",
+    //         METADATAS_TABLE_NAME, query_str, ordering_str, limit_str
+    //     );
+
+    //     log::info!("{}", s.clone());
+
+    //     let mut statement = self.connection.prepare(s)?;
+
+    //     let mut metadatas = Vec::new();
+
+    //     while let State::Row = statement.next()? {
+    //         metadatas.push(read(&statement)?);
+    //     }
+
+    //     Ok(metadatas)
+    // }
 }
 
-pub fn read(statement: &Statement) -> Result<Metadata, ServiceError> {
-    Ok(Metadata {
-        hash: statement.read::<String>(0)?,
-        data_key: statement.read::<String>(1)?,
-        program_id: statement.read::<String>(2)?,
-        alias: statement.read::<String>(3)?,
-        cid: statement.read::<String>(4)?,
-        public_key: statement.read::<String>(5)?,
-        version: statement.read::<String>(6)?,
-        loose: statement.read::<i64>(7)? == 1,
-    })
+pub fn read(result: RQLiteResult) -> Result<Vec<Metadata>, ServiceError> {
+    let mut metas = Vec::new();
+
+    for row in result.rows.unwrap() {
+        match row {
+            Row::Metadata(metadata) => metas.push(metadata),
+            _ => {
+                return Err(ServiceError::InternalError(format!(
+                    "Invalid data format: {}",
+                    METADATAS_TABLE_NAME
+                )))
+            }
+        }
+    }
+
+    Ok(metas)
 }

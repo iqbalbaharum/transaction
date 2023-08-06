@@ -1,4 +1,6 @@
 use marine_sqlite_connector::Error as SqliteError;
+use serde_json::Error as SerdeJsonError;
+use std::convert::From;
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -31,4 +33,10 @@ pub enum ServiceError {
     InvalidDataFormatForMethodType(String),
     #[error["No Program ID specify"]]
     NoProgramId(),
+}
+
+impl From<SerdeJsonError> for ServiceError {
+    fn from(error: SerdeJsonError) -> Self {
+        ServiceError::InternalError(error.to_string())
+    }
 }

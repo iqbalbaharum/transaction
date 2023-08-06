@@ -1,23 +1,18 @@
 use crate::defaults::STATUS_PENDING;
-use chrono::Utc;
 use marine_rs_sdk::marine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 #[marine]
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub hash: String,
     pub method: String,
     pub program_id: String,
     pub data_key: String,
-    pub from_peer_id: String,
-    pub host_id: String,
-    pub status: i64,
     pub data: String,
     pub public_key: String,
     pub alias: String,
     pub timestamp: u64,
-    pub error_text: String,
     pub version: String,
     pub mcdata: String,
 }
@@ -60,6 +55,17 @@ pub struct TransactionOrdering {
     pub sort: String,
 }
 
+#[marine]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct TransactionReceipt {
+    pub hash: String,
+    pub program_id: String,
+    pub status: i64,
+    pub timestamp: u64,
+    pub error_text: String,
+    pub data: String,
+}
+
 impl Transaction {
     pub fn new(
         program_id: String,
@@ -92,14 +98,10 @@ impl Transaction {
             method,
             program_id,
             data_key,
-            from_peer_id,
-            host_id,
-            status: STATUS_PENDING,
             data,
             public_key,
             alias,
             timestamp,
-            error_text: "".to_string(),
             version,
             mcdata,
         }

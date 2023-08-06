@@ -1,7 +1,8 @@
 use marine_rs_sdk::marine;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 #[marine]
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct Metadata {
     pub hash: String,
     pub data_key: String,

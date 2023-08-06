@@ -1,35 +1,86 @@
-use crate::defaults::DB_PATH;
+use crate::cron::Cron;
+use crate::cron_tx::CronTx;
+use crate::curl;
+use crate::defaults::{SQL_EXECUTE, SQL_QUERY};
 use crate::error::ServiceError;
-use marine_sqlite_connector::{Connection, Result as SqliteResult, State, Value};
+use crate::meta_contract::MetaContract;
+use crate::metadatas::Metadata;
+use crate::transaction::{Transaction, TransactionReceipt};
+use eyre::Result;
+use marine_rs_sdk::MountedBinaryResult;
+use serde::Deserialize;
 
-pub struct Storage {
-    pub(crate) connection: Connection,
+pub struct Storage {}
+
+#[derive(Deserialize)]
+pub(crate) struct RQLiteResponse {
+    results: Vec<RQLiteResult>,
+}
+#[derive(Deserialize)]
+pub(crate) struct RQLiteResult {
+    last_insert_id: Option<i64>,
+    rows_affected: Option<i64>,
+    error: Option<String>,
+    pub rows: Option<Vec<Row>>,
+}
+
+#[derive(Deserialize)]
+pub(crate) enum Row {
+    MetaContract(MetaContract),
+    Metadata(Metadata),
+    Transaction(Transaction),
+    TransactionReceipt(TransactionReceipt),
+    Cron(Cron),
+    CronTx(CronTx),
 }
 
 #[inline]
-pub(crate) fn get_storage() -> SqliteResult<Storage> {
-    marine_sqlite_connector::open(DB_PATH).map(|c| Storage { connection: c })
+pub(crate) fn get_storage() -> Storage {
+    Storage {}
 }
 
 impl Storage {
-    pub fn get_table_schema(&self, table_name: String) -> Result<String, ServiceError> {
-        let mut statement = self
-            .connection
-            .prepare(f!("SELECT sql FROM sqlite_master WHERE name=?;"))?;
+    pub(crate) fn execute(query: String) -> Result<RQLiteResult, ServiceError> {
+        let statement = vec![
+            "-XPOST".to_string(),
+            SQL_EXECUTE.to_string(),
+            "-H".to_string(),
+            "Content-Type: application/json".to_string(),
+            "-d".to_string(),
+            "[".to_string(),
+            query,
+            "]".to_string(),
+        ];
 
-        statement.bind(1, &Value::String(table_name))?;
-
-        if let State::Row = statement.next()? {
-            let schema = statement.read::<String>(0)?;
-            Ok(schema)
-        } else {
-            Ok("".to_string())
-        }
+        let result = curl(statement);
+        Self::unwrap_mounted_binary_result(result)
     }
 
-    pub fn delete_table(&self, table_name: String) -> Result<(), ServiceError> {
-        self.connection
-            .execute(f!("DROP TABLE IF EXISTS {table_name};"))?;
-        Ok(())
+    pub(crate) fn read(query: String) -> Result<RQLiteResult, ServiceError> {
+        let args = vec![
+            "-G".to_string(),
+            SQL_QUERY.to_string(),
+            "Content-Type: application/json".to_string(),
+            "--data-urlencode".to_string(),
+            format!("q={}", query).to_string(),
+        ];
+
+        let result = curl(args);
+        Self::unwrap_mounted_binary_result(result)
+    }
+
+    pub fn unwrap_mounted_binary_result(
+        result: MountedBinaryResult,
+    ) -> Result<RQLiteResult, ServiceError> {
+        let response: RQLiteResponse = serde_json::from_slice(&result.stdout)?;
+        if let Some(result) = response.results.into_iter().next() {
+            if let Some(error) = result.error {
+                return Err(ServiceError::InternalError(error));
+            } else {
+                return Ok(result);
+            }
+        }
+
+        Err(ServiceError::InternalError("Invalid response".to_string()))
     }
 }

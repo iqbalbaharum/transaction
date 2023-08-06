@@ -13,20 +13,22 @@ mod metadatas_impl;
 mod result;
 mod storage_impl;
 mod transaction;
+pub mod transaction_receipt;
 pub mod transactions_impl;
 mod utils;
 mod validators;
 
-use cron::SerdeCron;
-use cron_tx::CronTx;
+// use cron::SerdeCron;
+// use cron_tx::CronTx;
 use data_types::{DataTypeClone, DataTypeFork, SerdeDataTypeFork};
 use defaults::{
-    CRON_ACTION_CREATE, CRON_STATUS_ACTIVE, CRON_STATUS_DISABLE, ENCRYPTION_TYPE_ED25519,
+    CRON_ACTION_CREATE, CRON_STATUS_DISABLE, CRON_STATUS_ENABLE, ENCRYPTION_TYPE_ED25519,
     ENCRYPTION_TYPE_SECP256K1, METHOD_CRON, STATUS_PENDING, STATUS_SUCCESS,
 };
 use defaults::{METHOD_CLONE, METHOD_CONTRACT, METHOD_METADATA, STATUS_FAILED};
 use marine_rs_sdk::marine;
 use marine_rs_sdk::module_manifest;
+use marine_rs_sdk::MountedBinaryResult;
 use marine_rs_sdk::WasmLoggerBuilder;
 
 use error::ServiceError::{
@@ -69,12 +71,13 @@ pub fn main() {
         .build()
         .unwrap();
 
-    let storage = get_storage().unwrap();
+    let storage = get_storage();
     storage.create_meta_contract_table();
     storage.create_transactions_table();
     storage.create_metadatas_table();
     storage.create_cron_table();
     storage.create_cron_tx_table();
+    storage.create_transaction_receipt_table();
 }
 
 #[marine]
@@ -92,7 +95,7 @@ pub fn publish(
     let mut program_id = program_id;
     let mut error: Option<ServiceError> = None;
     let mut content = "".to_string();
-    let storage = get_storage().expect("Database non existance");
+    let storage = get_storage();
 
     if error.is_none() {
         if method != METHOD_CONTRACT
@@ -670,4 +673,10 @@ extern "C" {
 
     #[link_name = "get_public_key_type"]
     pub fn get_public_key_type(public_key: &str) -> String;
+}
+
+#[marine]
+#[link(wasm_import_module = "host")]
+extern "C" {
+    pub fn curl(cmd: Vec<String>) -> MountedBinaryResult;
 }

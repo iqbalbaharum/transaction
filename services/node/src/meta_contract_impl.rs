@@ -1,8 +1,6 @@
 use crate::error::ServiceError;
-use crate::error::ServiceError::RecordNotFound;
-use crate::storage_impl::Storage;
+use crate::storage_impl::{RQLiteResult, Row, Storage};
 use crate::{defaults::META_CONTRACT_TABLE_NAME, meta_contract::MetaContract};
-use marine_sqlite_connector::{State, Statement, Value};
 
 impl Storage {
     pub fn create_meta_contract_table(&self) {
@@ -16,11 +14,7 @@ impl Storage {
             META_CONTRACT_TABLE_NAME
         );
 
-        let result = self.connection.execute(table_schema);
-
-        if let Err(error) = result {
-            println!("create_meta_contract_table error: {}", error);
-        }
+        let result = Storage::execute(table_schema);
     }
 
     /**
@@ -33,47 +27,42 @@ impl Storage {
             META_CONTRACT_TABLE_NAME, contract.program_id, contract.public_key, contract.cid
         );
 
-        self.connection.execute(s)?;
-
+        let result = Storage::execute(s);
         Ok(())
-    }
-
-    pub fn get_meta_contract(&self, program_id: String) -> Result<MetaContract, ServiceError> {
-        let mut statement = self.connection.prepare(f!(
-            "SELECT * FROM {META_CONTRACT_TABLE_NAME} WHERE program_id = ?"
-        ))?;
-
-        statement.bind(1, &Value::String(program_id.clone()))?;
-
-        if let State::Row = statement.next()? {
-            read(&statement)
-        } else {
-            Err(RecordNotFound(f!("{program_id}")))
-        }
     }
 
     pub fn get_meta_contract_by_id(
         &self,
         program_id: String,
     ) -> Result<MetaContract, ServiceError> {
-        let mut statement = self.connection.prepare(f!(
-            "SELECT * FROM {META_CONTRACT_TABLE_NAME} WHERE program_id = ?"
-        ))?;
+        let statement = f!("SELECT * FROM {META_CONTRACT_TABLE_NAME} WHERE program_id = ?");
 
-        statement.bind(1, &Value::String(program_id.clone()))?;
-
-        if let State::Row = statement.next()? {
-            read(&statement)
-        } else {
-            Err(RecordNotFound(f!("{program_id}")))
+        let result = Storage::read(statement)?;
+        let metas = read(result)?;
+        match read(result) {
+            Ok(metas) => metas
+                .first()
+                .cloned()
+                .ok_or_else(|| ServiceError::RecordNotFound("No record found".to_string())),
+            Err(e) => Err(e),
         }
     }
 }
 
-pub fn read(statement: &Statement) -> Result<MetaContract, ServiceError> {
-    Ok(MetaContract {
-        program_id: statement.read::<String>(0)?,
-        public_key: statement.read::<String>(1)?,
-        cid: statement.read::<String>(2)?,
-    })
+pub fn read(result: RQLiteResult) -> Result<Vec<MetaContract>, ServiceError> {
+    let mut metas = Vec::new();
+
+    for row in result.rows.unwrap() {
+        match row {
+            Row::MetaContract(meta_contract) => metas.push(meta_contract),
+            _ => {
+                return Err(ServiceError::InternalError(format!(
+                    "Invalid data format: {}",
+                    META_CONTRACT_TABLE_NAME
+                )))
+            }
+        }
+    }
+
+    Ok(metas)
 }
